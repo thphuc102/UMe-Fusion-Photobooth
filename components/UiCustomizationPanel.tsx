@@ -1,7 +1,9 @@
 
 
+
 import React, { useRef } from 'react';
-import { UiConfig } from '../App';
+// Fix: Import UiConfig from the correct file, types.ts
+import { UiConfig } from '../types';
 import { UploadIcon } from './icons';
 
 interface UiCustomizationPanelProps {
@@ -10,6 +12,9 @@ interface UiCustomizationPanelProps {
   config: UiConfig;
   onConfigChange: (newConfig: UiConfig) => void;
 }
+
+// Fix: Define a specific type for color keys to ensure type safety.
+type ColorUiConfigKeys = 'primaryColor' | 'textColor' | 'backgroundColor' | 'panelColor' | 'borderColor';
 
 const UiCustomizationPanel: React.FC<UiCustomizationPanelProps> = ({ isOpen, onClose, config, onConfigChange }) => {
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -41,7 +46,8 @@ const UiCustomizationPanel: React.FC<UiCustomizationPanelProps> = ({ isOpen, onC
       { label: 'Poppins', value: "'Poppins', sans-serif" },
   ];
 
-  const colorFields: {label: string, key: keyof UiConfig}[] = [
+  // Fix: Use the specific ColorUiConfigKeys type to ensure `key` is a string and `config[key]` resolves to a string.
+  const colorFields: {label: string, key: ColorUiConfigKeys}[] = [
       { label: 'Accent', key: 'primaryColor' },
       { label: 'Text', key: 'textColor' },
       { label: 'Background', key: 'backgroundColor' },
@@ -126,8 +132,8 @@ const UiCustomizationPanel: React.FC<UiCustomizationPanelProps> = ({ isOpen, onC
                 {colorFields.map(({label, key}) => (
                      <div key={key} className="flex items-center justify-between">
                         <label htmlFor={key} className="text-sm opacity-70">{label}</label>
-                        <div className="p-0.5 rounded-md border border-white/20" style={{ backgroundColor: config[key] as string }}>
-                           <input type="color" id={key} value={config[key] as string} onChange={(e) => onConfigChange({ ...config, [key]: e.target.value })} className="w-6 h-6 p-0 border-none rounded-sm cursor-pointer bg-transparent appearance-none" />
+                        <div className="p-0.5 rounded-md border border-white/20" style={{ backgroundColor: config[key] }}>
+                           <input type="color" id={key} value={config[key]} onChange={(e) => onConfigChange({ ...config, [key]: e.target.value })} className="w-6 h-6 p-0 border-none rounded-sm cursor-pointer bg-transparent appearance-none" />
                         </div>
                     </div>
                 ))}

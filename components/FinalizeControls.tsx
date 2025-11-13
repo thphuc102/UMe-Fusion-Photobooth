@@ -1,7 +1,6 @@
 
-
-import React, { useState } from 'react';
-import { DownloadIcon, ResetIcon, ZoomInIcon, ZoomOutIcon, GoogleDriveIcon, UndoIcon, RedoIcon } from './icons';
+import React from 'react';
+import { DownloadIcon, ResetIcon, ZoomInIcon, ZoomOutIcon, GoogleDriveIcon, UndoIcon, RedoIcon, SparklesIcon } from './icons';
 import { Photo } from '../types';
 
 interface FinalizeControlsProps {
@@ -15,16 +14,21 @@ interface FinalizeControlsProps {
   selectedPhotoIndex: number;
   onSelectPhoto: (index: number) => void;
   onPhotoUpdate: (index: number, updates: Partial<Photo>) => void;
-  onReorderPhoto: (index: number, direction: 'forward' | 'backward') => void;
   onResetPhotoAdjustments: (index: number) => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
   isKioskMode: boolean;
+  globalPhotoScale: number;
+  onGlobalPhotoScaleChange: (scale: number) => void;
+  // AI Props
+  aiPrompt: string;
+  onAiPromptChange: (prompt: string) => void;
+  onAiGenerate: () => void;
+  isAiLoading: boolean;
+  aiError: string | null;
 }
-
-type DriveModalStatus = 'idle' | 'connecting' | 'exporting' | 'success' | 'error';
 
 const FinalizeControls: React.FC<FinalizeControlsProps> = ({ 
     onDownload, 
@@ -37,16 +41,21 @@ const FinalizeControls: React.FC<FinalizeControlsProps> = ({
     selectedPhotoIndex,
     onSelectPhoto,
     onPhotoUpdate,
-    onReorderPhoto,
     onResetPhotoAdjustments,
     undo,
     redo,
     canUndo,
     canRedo,
     isKioskMode,
+    globalPhotoScale,
+    onGlobalPhotoScaleChange,
+    aiPrompt,
+    onAiPromptChange,
+    onAiGenerate,
+    isAiLoading,
+    aiError,
 }) => {
   const selectedPhoto = selectedPhotoIndex !== -1 ? photos[selectedPhotoIndex] : null;
-  const [driveModalState, setDriveModalState] = useState<{ open: boolean, status: DriveModalStatus }>({ open: false, status: 'idle' });
 
   const handleTransformChange = (prop: 'rotation', value: number) => {
     if (!selectedPhoto) return;
@@ -65,87 +74,15 @@ const FinalizeControls: React.FC<FinalizeControlsProps> = ({
     onResetPhotoAdjustments(selectedPhotoIndex);
   };
   
-  const handleExportToDrive = async () => {
-    setDriveModalState({ open: true, status: 'connecting' });
-    await new Promise(res => setTimeout(res, 1500)); // Simulate API call
-    
-    setDriveModalState({ open: true, status: 'exporting' });
-    const imageData = await onGetImageForExport();
-
-    if (!imageData) {
-        setDriveModalState({ open: true, status: 'error' });
-        return;
-    }
-
-    await new Promise(res => setTimeout(res, 2000)); // Simulate upload
-    setDriveModalState({ open: true, status: 'success' });
+  const getAspectRatio = (width: number, height: number): string => {
+      if (!width || !height) return 'N/A';
+      const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b);
+      const commonDivisor = gcd(width, height);
+      return `${width / commonDivisor}:${height / commonDivisor}`;
   };
-
-  const handleExportAll = () => {
-      onDownload();
-      handleExportToDrive();
-  };
-
-  const closeDriveModal = () => {
-      setDriveModalState({ open: false, status: 'idle' });
-  }
-
-  const renderDriveModal = () => {
-    if (!driveModalState.open) return null;
-    
-    let content;
-    switch(driveModalState.status) {
-        case 'idle':
-            content = (<>
-                <h3 className="text-lg font-medium leading-6">Export to Google Drive</h3>
-                <p className="mt-2 text-sm opacity-70">This is a simulated action. In a real application, this would connect to Google Drive to save the image.</p>
-                <div className="mt-4">
-                    <button onClick={handleExportToDrive} type="button" className="inline-flex justify-center rounded-md border border-transparent bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white filter hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2">Connect & Export</button>
-                    <button onClick={closeDriveModal} type="button" className="ml-2 inline-flex justify-center rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-medium opacity-80 hover:bg-black/20">Cancel</button>
-                </div>
-            </>);
-            break;
-        case 'connecting':
-        case 'exporting':
-            content = (<>
-                <div className="flex items-center gap-4">
-                    <div className="w-8 h-8 border-4 border-t-[var(--color-primary)] border-gray-600 rounded-full animate-spin"></div>
-                    <div>
-                        <h3 className="text-lg font-medium leading-6">{driveModalState.status === 'connecting' ? 'Connecting to Google...' : 'Exporting Image...'}</h3>
-                        <p className="mt-1 text-sm opacity-70">Please wait.</p>
-                    </div>
-                </div>
-            </>);
-            break;
-        case 'success':
-            content = (<>
-                <h3 className="text-lg font-medium leading-6 text-green-400">Success!</h3>
-                <p className="mt-2 text-sm opacity-70">Your image has been saved to your Google Drive.</p>
-                <div className="mt-4"><button onClick={closeDriveModal} type="button" className="inline-flex justify-center rounded-md border border-transparent bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white filter hover:brightness-110">Done</button></div>
-            </>);
-            break;
-        case 'error':
-             content = (<>
-                <h3 className="text-lg font-medium leading-6 text-red-400">Error</h3>
-                <p className="mt-2 text-sm opacity-70">Could not export the image. Please try again.</p>
-                <div className="mt-4"><button onClick={closeDriveModal} type="button" className="inline-flex justify-center rounded-md border border-transparent bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white filter hover:brightness-110">Close</button></div>
-            </>);
-            break;
-    }
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" aria-modal="true">
-            <div className="relative transform overflow-hidden rounded-lg bg-[var(--color-panel)] border border-[var(--color-border)] text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg p-6">
-                {content}
-            </div>
-        </div>
-    );
-  }
-
 
   return (
     <div className="w-full max-w-md mx-auto flex flex-col items-center gap-4 mt-8 lg:mt-0">
-      {renderDriveModal()}
       <div className="w-full text-center">
         <h2 className="text-2xl font-bold text-[var(--color-primary)]">Step 4: Finalize & Export</h2>
         <p className="opacity-70">Adjust photos, set frame transparency, and download.</p>
@@ -159,6 +96,35 @@ const FinalizeControls: React.FC<FinalizeControlsProps> = ({
           Redo <RedoIcon />
         </button>
       </div>
+      
+      {/* AI Editing Panel */}
+      <div className="w-full p-4 bg-[var(--color-panel)] rounded-lg border border-[var(--color-border)] space-y-3">
+        <div className="flex items-center gap-2">
+            <SparklesIcon className="w-5 h-5 text-[var(--color-primary)]" />
+            <h3 className="text-sm font-medium opacity-80">Edit with AI</h3>
+        </div>
+        <p className="text-xs text-gray-500">Describe a change, like "make it black and white" or "add party hats". Manual adjustments will clear the AI edit.</p>
+        <textarea
+            rows={2}
+            value={aiPrompt}
+            onChange={(e) => onAiPromptChange(e.target.value)}
+            placeholder="e.g., Change background to a snowy mountain..."
+            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-md p-2 text-sm focus:ring-[var(--color-primary)] focus:border-[var(--color-primary)]"
+        />
+        {aiError && <p className="text-xs text-red-400">{aiError}</p>}
+        <button onClick={onAiGenerate} disabled={isAiLoading || photos.length === 0} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-white font-semibold rounded-lg shadow-md filter hover:brightness-110 disabled:bg-gray-500 disabled:cursor-not-allowed">
+            {isAiLoading ? (
+                <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Generating...
+                </>
+            ) : "Generate"}
+        </button>
+      </div>
+
 
       <div className="w-full p-4 bg-[var(--color-panel)] rounded-lg border border-[var(--color-border)]">
         <h3 className="text-sm font-medium opacity-80 mb-3">Select Photo to Adjust</h3>
@@ -179,8 +145,13 @@ const FinalizeControls: React.FC<FinalizeControlsProps> = ({
 
       {selectedPhoto && (
         <div className="w-full p-4 bg-[var(--color-panel)] rounded-lg border border-[var(--color-border)] space-y-4">
-          <h3 className="text-sm font-medium opacity-80">Photo Adjustments (Selected)</h3>
-          <p className="text-xs text-gray-500 -mt-2">Drag photo to pan, scroll to zoom, use handle to rotate.</p>
+          <div className="flex justify-between items-baseline">
+            <h3 className="text-sm font-medium opacity-80">Photo Adjustments</h3>
+            <p className="text-xs text-gray-400">
+                {selectedPhoto.originalWidth}&times;{selectedPhoto.originalHeight} ({getAspectRatio(selectedPhoto.originalWidth, selectedPhoto.originalHeight)})
+            </p>
+          </div>
+          <p className="text-xs text-gray-500 -mt-3">Drag photo to pan, scroll to zoom, use handle to rotate.</p>
           
           <div>
             <label className="block text-xs font-medium opacity-70 mb-1">Crop Zoom</label>
@@ -198,38 +169,41 @@ const FinalizeControls: React.FC<FinalizeControlsProps> = ({
               <input type="number" value={Math.round(selectedPhoto.transform.rotation)} onChange={(e) => handleTransformChange('rotation', parseFloat(e.target.value))} className="w-20 bg-[var(--color-background)] border border-[var(--color-border)] rounded-md p-1 text-center" />
             </div>
           </div>
-
-           <div>
-            <label className="block text-xs font-medium opacity-70 mb-1">Layering</label>
-            <div className="flex items-center gap-3">
-                <button onClick={() => onReorderPhoto(selectedPhotoIndex, 'backward')} className="w-full text-xs py-2 px-3 bg-black/20 hover:bg-black/30 rounded-md">Send Backward</button>
-                <button onClick={() => onReorderPhoto(selectedPhotoIndex, 'forward')} className="w-full text-xs py-2 px-3 bg-black/20 hover:bg-black/30 rounded-md">Bring Forward</button>
-            </div>
-          </div>
          
           <button onClick={handleResetAdjustments} className="w-full text-xs py-2 px-3 bg-black/20 hover:bg-black/30 rounded-md flex items-center justify-center gap-2">
             <ResetIcon className="w-4 h-4" /> Reset All Adjustments
           </button>
         </div>
       )}
+
+      <div className="w-full p-4 bg-[var(--color-panel)] rounded-lg border border-[var(--color-border)] space-y-4">
+        <div>
+          <h3 className="text-sm font-medium opacity-80 mb-2">Global Layout</h3>
+          <label className="block text-xs font-medium opacity-70 mb-1">
+              Overall Photo Scale: <span className="font-bold text-[var(--color-primary)]">{Math.round(globalPhotoScale * 100)}%</span>
+          </label>
+          <div className="flex items-center gap-3">
+            <ZoomOutIcon className="w-5 h-5 opacity-70" />
+            <input 
+              type="range" 
+              min={0.5} 
+              max={1.5} 
+              step="0.01" 
+              value={globalPhotoScale} 
+              onChange={(e) => onGlobalPhotoScaleChange(parseFloat(e.target.value))} 
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+            <ZoomInIcon className="w-5 h-5 opacity-70" />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="opacity-slider" className="text-sm font-medium opacity-80">Frame Transparency: <span className="font-bold text-[var(--color-primary)]">{Math.round(frameOpacity * 100)}%</span></label>
+          <input id="opacity-slider" type="range" min="0" max="1" step="0.01" value={frameOpacity} onChange={(e) => onOpacityChange(parseFloat(e.target.value))} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer mt-2" />
+        </div>
+      </div>
       
-      <div className="w-full p-4 bg-[var(--color-panel)] rounded-lg border border-[var(--color-border)]">
-        <label htmlFor="opacity-slider" className="text-sm font-medium opacity-80">Frame Transparency: <span className="font-bold text-[var(--color-primary)]">{Math.round(frameOpacity * 100)}%</span></label>
-        <input id="opacity-slider" type="range" min="0" max="1" step="0.01" value={frameOpacity} onChange={(e) => onOpacityChange(parseFloat(e.target.value))} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer mt-2" />
-      </div>
-
-      <div className="w-full">
-        <button onClick={handleExportAll} className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-purple-600 text-white font-bold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-400">
-           Export All
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full mt-3">
+      <div className="w-full mt-3">
         <button onClick={onDownload} className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-400">
-          <DownloadIcon className="w-5 h-5" /> Download JPG
-        </button>
-         <button onClick={() => handleExportToDrive()} className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-white text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-400">
-          <GoogleDriveIcon className="w-5 h-5 text-[#4285F4]" /> Export to Drive
+          <DownloadIcon className="w-5 h-5" /> Download Your Creation
         </button>
       </div>
       

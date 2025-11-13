@@ -1,441 +1,482 @@
-
-
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { AppStep, Photo, Placeholder, OrganizerSettings } from './types';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { AppSettings, PhotoboothSession, AppStep, Placeholder, Photo, Transform, Crop, UiConfig, GuestScreenMode } from './types';
 import FrameUploader from './components/FrameUploader';
-import PhotoSelector, { useHistoryState } from './components/PhotoSelector';
-import CanvasEditor from './components/CanvasEditor';
-import FinalizeControls from './components/FinalizeControls';
 import TemplateDesigner from './components/TemplateDesigner';
+import FinalizeControls from './components/FinalizeControls';
+import CanvasEditor from './components/CanvasEditor';
 import StepIndicator from './components/StepIndicator';
+import SettingsPanel from './components/SettingsPanel';
 import UiCustomizationPanel from './components/UiCustomizationPanel';
-import { PaletteIcon } from './components/icons';
+import { GoogleGenAI, Modality } from '@google/genai';
 
-export interface UiConfig {
-  title: string;
-  description: string;
-  footer: string;
-  logoSrc: string | null;
-  backgroundSrc: string | null;
-  fontFamily: string;
-  primaryColor: string;
-  textColor: string;
-  backgroundColor: string;
-  panelColor: string;
-  borderColor: string;
+import { SettingsIcon, PaletteIcon } from './components/icons';
+import { useGuestWindow } from './hooks/useGuestWindow';
+import { useHotFolder } from './hooks/useHotFolder';
+
+// Initialize Gemini AI Client.
+// The API key is sourced from environment variables for security and flexibility.
+const apiKey = process.env.API_KEY;
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+if (!apiKey) {
+    console.warn("AI features are disabled: Gemini API key not found in environment variables (process.env.API_KEY).");
 }
 
-const App: React.FC = () => {
-  const [currentStep, setCurrentStep] = useState<AppStep>(AppStep.FRAME_UPLOAD);
-  const [frameImage, setFrameImage] = useState<string | null>(null);
-  const { 
-    state: userPhotos, 
-    setState: setUserPhotos, 
-    undo, 
-    redo, 
-    canUndo, 
-    canRedo, 
-    reset: resetUserPhotos 
-  } = useHistoryState<Photo[]>([]);
-  const [placeholders, setPlaceholders] = useState<Placeholder[]>([]);
-  const [frameOpacity, setFrameOpacity] = useState(1);
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(-1);
-  const [organizerSettings, setOrganizerSettings] = useState<OrganizerSettings>({
-      driveFolderUrl: '',
-      localDownloadPath: '',
-      kioskMode: false,
-      autoResetTimer: 0,
-  });
-  const [uiConfig, setUiConfig] = useState<UiConfig>({
-    title: 'UIT Media FrameFusion Photobooth',
-    description: 'Test',
-    footer: '© 2024 UIT Media. A simulated photobooth experience.',
-    logoSrc: null,
-    backgroundSrc: null,
-    fontFamily: "'Roboto', sans-serif",
-    primaryColor: '#6366F1', // indigo-500
-    textColor: '#F9FAFB', // gray-50
-    backgroundColor: '#111827', // gray-900
-    panelColor: '#1F2937', // gray-800
-    borderColor: '#4B5563', // gray-600
-  });
-  const [isUiPanelOpen, setIsUiPanelOpen] = useState(false);
-
-  const inactivityTimerRef = useRef<number | null>(null);
-  
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // Effect to apply theme and font changes globally
-  useEffect(() => {
-    const root = document.documentElement;
-    
-    const hexToRgb = (hex: string): string => {
-      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-      return result
-        ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`
-        : '99, 102, 241'; // Default to indigo-500 RGB if parse fails
-    };
-
-    root.style.setProperty('--color-primary', uiConfig.primaryColor);
-    root.style.setProperty('--color-primary-rgb', hexToRgb(uiConfig.primaryColor));
-    root.style.setProperty('--color-text-primary', uiConfig.textColor);
-    root.style.setProperty('--color-background', uiConfig.backgroundColor);
-    root.style.setProperty('--color-panel', uiConfig.panelColor);
-    root.style.setProperty('--color-border', uiConfig.borderColor);
-
-    document.body.style.fontFamily = uiConfig.fontFamily;
-  }, [uiConfig]);
-
-  const handleReset = useCallback(() => {
-    if (frameImage) URL.revokeObjectURL(frameImage);
-    setFrameImage(null);
-    resetUserPhotos([]);
-    setPlaceholders([]);
-    setFrameOpacity(1);
-    setSelectedPhotoIndex(-1);
-    setCurrentStep(AppStep.FRAME_UPLOAD);
-  }, [frameImage, resetUserPhotos]);
-
-  const handleCreateNew = useCallback(() => {
-    resetUserPhotos([]);
-    setSelectedPhotoIndex(-1);
-    setCurrentStep(AppStep.PHOTO_UPLOAD);
-  }, [resetUserPhotos]);
-  
-  const resetInactivityTimer = useCallback(() => {
-    if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-    }
-    if (currentStep === AppStep.EDIT_AND_EXPORT && organizerSettings.autoResetTimer > 0) {
-        inactivityTimerRef.current = window.setTimeout(() => {
-            handleCreateNew();
-        }, organizerSettings.autoResetTimer * 1000);
-    }
-  }, [currentStep, organizerSettings.autoResetTimer, handleCreateNew]);
-  
-  useEffect(() => {
-    resetInactivityTimer();
-    return () => {
-        if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-    };
-  }, [resetInactivityTimer, userPhotos, selectedPhotoIndex, frameOpacity]);
-
-
-  // Global keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-        resetInactivityTimer();
-        if (currentStep < AppStep.PHOTO_UPLOAD) return;
-
-        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-        const isUndo = (isMac ? e.metaKey : e.ctrlKey) && e.key === 'z' && !e.shiftKey;
-        const isRedo = (isMac ? e.metaKey : e.ctrlKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey));
-
-        if (isUndo) {
-            e.preventDefault();
-            undo();
-        } else if (isRedo) {
-            e.preventDefault();
-            redo();
-        }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('mousemove', resetInactivityTimer);
-    window.addEventListener('mousedown', resetInactivityTimer);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('mousemove', resetInactivityTimer);
-      window.removeEventListener('mousedown', resetInactivityTimer);
-    }
-  }, [currentStep, undo, redo, resetInactivityTimer]);
-
-
-  const handleFrameSelect = (frameFile: File) => {
-    const frameDataUrl = URL.createObjectURL(frameFile);
-    setFrameImage(frameDataUrl);
-    setCurrentStep(AppStep.TEMPLATE_DESIGN);
-  };
-
-  const handleTemplateConfirm = (confirmedPlaceholders: Placeholder[]) => {
-    setPlaceholders(confirmedPlaceholders);
-    setCurrentStep(AppStep.PHOTO_UPLOAD);
-  };
-
-  const handlePhotosSelect = async (photoDataUrls: string[]) => {
-    const photos: Photo[] = await Promise.all(
-      photoDataUrls.map(async (src, index): Promise<Photo> => {
-        const placeholder = placeholders[index];
-        const { originalWidth, originalHeight } = await new Promise<{originalWidth: number, originalHeight: number}>(resolve => {
-            const img = new Image();
-            img.onload = () => resolve({ originalWidth: img.width, originalHeight: img.height });
-            img.src = src;
-        });
-        
-        return {
-          src,
-          originalWidth,
-          originalHeight,
-          transform: {
+// Helper to create a new Photo object from a src and placeholder
+const createPhotoFromPlaceholder = (src: string, placeholder: Placeholder, canvasSize: {width: number, height: number}, imageSize: {width: number, height: number}): Photo => {
+    return {
+        src,
+        originalWidth: imageSize.width,
+        originalHeight: imageSize.height,
+        transform: {
             x: placeholder.x + placeholder.width / 2,
             y: placeholder.y + placeholder.height / 2,
             width: placeholder.width,
             height: placeholder.height,
             rotation: 0,
-          },
-          crop: {
-            x: 0,
-            y: 0,
-            scale: 1,
-          },
-        };
-      })
-    );
-    resetUserPhotos(photos);
-    setSelectedPhotoIndex(photos.length > 0 ? 0 : -1);
-    setCurrentStep(AppStep.EDIT_AND_EXPORT);
-  };
-
-  const handlePhotoUpdate = (index: number, updates: Partial<Photo>) => {
-    setUserPhotos(currentPhotos =>
-        currentPhotos.map((photo, i) =>
-            i === index ? { ...photo, ...updates } : photo
-        )
-    );
-  };
-
-  const handleResetPhotoAdjustments = (index: number) => {
-    if (index === -1) return;
-    const photoToReset = userPhotos[index];
-    const placeholder = placeholders[index];
-    const updates: Partial<Photo> = {
-        transform: {
-            ...photoToReset.transform,
-            rotation: 0
         },
         crop: { x: 0, y: 0, scale: 1 },
     };
-    handlePhotoUpdate(index, updates);
-  };
+};
 
-  const handleReorderPhoto = (index: number, direction: 'forward' | 'backward') => {
-      setUserPhotos(currentPhotos => {
-          if (index < 0 || index >= currentPhotos.length) return currentPhotos;
-          const photoToMove = currentPhotos[index];
-          const otherPhotos = currentPhotos.filter((_, i) => i !== index);
-          
-          let newIndex = index;
-          if (direction === 'forward') {
-              newIndex = Math.min(index + 1, otherPhotos.length);
-          } else {
-              newIndex = Math.max(index - 1, 0);
-          }
-          otherPhotos.splice(newIndex, 0, photoToMove);
-          setSelectedPhotoIndex(newIndex);
-          return otherPhotos;
-      });
-  };
-  
-  const handleDownload = useCallback(async () => {
-    const originalCanvas = canvasRef.current;
-    if (!originalCanvas || !frameImage) return;
+const hexToRgb = (hex: string): string => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '255, 255, 255';
+};
 
-    const frameImg = new Image();
-    await new Promise(resolve => { frameImg.onload = resolve; frameImg.src = frameImage; });
-
-    const exportCanvas = document.createElement('canvas');
-    const exportCtx = exportCanvas.getContext('2d');
-    if (!exportCtx) return;
-
-    const EXPORT_RESOLUTION_WIDTH = frameImg.width;
-    const EXPORT_RESOLUTION_HEIGHT = frameImg.height;
-
-    exportCanvas.width = EXPORT_RESOLUTION_WIDTH;
-    exportCanvas.height = EXPORT_RESOLUTION_HEIGHT;
+const App: React.FC = () => {
+    const [appStep, setAppStep] = useState<AppStep>(AppStep.FRAME_UPLOAD);
+    const [settings, setSettings] = useState<AppSettings>({
+        frameSrc: null,
+        hotFolderHandle: null,
+        placeholders: [],
+        hotFolderName: '',
+        driveFolderId: null,
+        driveFolderName: '',
+        fileNameTemplate: 'photobooth-{timestamp}',
+    });
+    const [session, setSession] = useState<PhotoboothSession>({
+        isActive: false,
+        photos: [],
+    });
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isUiPanelOpen, setIsUiPanelOpen] = useState(false);
     
-    exportCtx.fillStyle = '#1f2937';
-    exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+    // Finalize step state
+    const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(-1);
+    const [frameOpacity, setFrameOpacity] = useState(1);
+    const [globalPhotoScale, setGlobalPhotoScale] = useState(1);
+    const history = useRef<PhotoboothSession[]>([]);
+    const historyIndex = useRef(0);
     
-    const imageElements = await Promise.all(
-        userPhotos.map(p => new Promise<HTMLImageElement>(resolve => {
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            img.onload = () => resolve(img);
-            img.src = p.src;
-        }))
-    );
+    // AI Editing State
+    const [aiPrompt, setAiPrompt] = useState('');
+    const [isAiLoading, setIsAiLoading] = useState(false);
+    const [aiError, setAiError] = useState<string | null>(null);
+    const [aiPreviewImage, setAiPreviewImage] = useState<string | null>(null);
+    const [finalCompositeImage, setFinalCompositeImage] = useState<string | null>(null);
 
-    userPhotos.forEach((photo, index) => {
-        const img = imageElements[index];
-        if (!img) return;
+    const { guestWindow, openGuestWindow, closeGuestWindow, sendMessage } = useGuestWindow();
+    const finalCanvasRef = useRef<HTMLCanvasElement>(null);
 
-        const { x, y, width, height, rotation } = photo.transform;
-        
-        const absX = x * exportCanvas.width;
-        const absY = y * exportCanvas.height;
-        const absWidth = width * exportCanvas.width;
-        const absHeight = height * exportCanvas.height;
-        const angle = rotation * Math.PI / 180;
-        
-        exportCtx.save();
-        exportCtx.translate(absX, absY);
-        exportCtx.rotate(angle);
-        
-        exportCtx.beginPath();
-        exportCtx.rect(-absWidth / 2, -absHeight / 2, absWidth, absHeight);
-        exportCtx.clip();
-        
-        const { crop } = photo;
-        const imgAspectRatio = photo.originalWidth / photo.originalHeight;
-        
-        let displayWidth = absWidth;
-        let displayHeight = absHeight;
-        
-        if (imgAspectRatio > absWidth / absHeight) {
-          displayHeight = absHeight;
-          displayWidth = displayHeight * imgAspectRatio;
-        } else {
-          displayWidth = absWidth;
-          displayHeight = displayWidth / imgAspectRatio;
-        }
-
-        displayWidth *= crop.scale;
-        displayHeight *= crop.scale;
-        
-        exportCtx.drawImage(
-            img, 
-            (-displayWidth / 2) + crop.x, 
-            (-displayHeight / 2) + crop.y,
-            displayWidth, 
-            displayHeight
-        );
-        
-        exportCtx.restore();
+    const [uiConfig, setUiConfig] = useState<UiConfig>({
+        title: 'UIT Media FrameFusion Photobooth',
+        description: 'An elegant photobooth experience for your special event.',
+        footer: 'Powered by FrameFusion',
+        logoSrc: null,
+        backgroundSrc: null,
+        fontFamily: "'Roboto', sans-serif",
+        primaryColor: '#8b5cf6', // Indigo-500
+        textColor: '#e5e7eb', // Gray-200
+        backgroundColor: '#111827', // Gray-900
+        panelColor: '#1f2937', // Gray-800
+        borderColor: '#374151', // Gray-700
     });
 
-    exportCtx.globalAlpha = frameOpacity;
-    exportCtx.drawImage(frameImg, 0, 0, exportCanvas.width, exportCanvas.height);
-    exportCtx.globalAlpha = 1.0;
+    useEffect(() => {
+        const root = document.documentElement;
+        root.style.setProperty('--color-primary', uiConfig.primaryColor);
+        root.style.setProperty('--color-primary-rgb', hexToRgb(uiConfig.primaryColor));
+        root.style.setProperty('--color-text-primary', uiConfig.textColor);
+        root.style.setProperty('--color-background', uiConfig.backgroundColor);
+        root.style.setProperty('--color-panel', uiConfig.panelColor);
+        root.style.setProperty('--color-border', uiConfig.borderColor);
+        root.style.fontFamily = uiConfig.fontFamily;
+        if (uiConfig.backgroundSrc) {
+            root.style.setProperty('--background-image', `url(${uiConfig.backgroundSrc})`);
+        } else {
+            root.style.setProperty('--background-image', 'none');
+        }
+    }, [uiConfig]);
+
+    const invalidateAiImage = () => {
+        if (finalCompositeImage) {
+            setFinalCompositeImage(null);
+        }
+    };
+
+    const handleNewPhotos = useCallback(async (newPhotos: Map<string, string>) => {
+        if (settings.placeholders.length === 0) return;
+
+        const canvas = finalCanvasRef.current ?? document.createElement('canvas');
+        const canvasSize = { width: canvas.width, height: canvas.height };
+        
+        const newPhotoObjects: Photo[] = [];
+        const existingPhotoCount = session.photos.length;
+        let placeholderIndex = existingPhotoCount;
+
+        for (const [_, url] of newPhotos.entries()) {
+            if (placeholderIndex >= settings.placeholders.length) break;
+            
+            const image = new Image();
+            image.src = url;
+            await image.decode();
+
+            const placeholder = settings.placeholders[placeholderIndex];
+            const newPhoto = createPhotoFromPlaceholder(url, placeholder, canvasSize, {width: image.width, height: image.height});
+            newPhotoObjects.push(newPhoto);
+            placeholderIndex++;
+        }
+        
+        setSession(prev => {
+            const updatedPhotos = [...prev.photos, ...newPhotoObjects];
+             sendMessage({
+                mode: GuestScreenMode.REVIEW,
+                photos: updatedPhotos,
+                frameSrc: settings.frameSrc,
+            });
+            return { ...prev, photos: updatedPhotos };
+        });
+    }, [session.photos.length, settings.frameSrc, settings.placeholders, sendMessage]);
     
-    const dataUrl = exportCanvas.toDataURL('image/jpeg', 0.98);
-    return dataUrl;
-  }, [userPhotos, frameImage, frameOpacity]);
-  
-  const triggerDownload = useCallback(async () => {
-    const dataUrl = await handleDownload();
-    if (!dataUrl) return;
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = `photobooth-strip-${Date.now()}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, [handleDownload]);
+    const { startPolling, stopPolling } = useHotFolder(settings.hotFolderHandle, handleNewPhotos) as { startPolling: () => void; stopPolling: () => void; };
 
-  const renderCurrentStep = () => {
-    switch (currentStep) {
-      case AppStep.FRAME_UPLOAD:
-        return <FrameUploader onFrameSelect={handleFrameSelect} organizerSettings={organizerSettings} onSettingsChange={setOrganizerSettings} />;
-      case AppStep.TEMPLATE_DESIGN:
-        return <TemplateDesigner frameSrc={frameImage} onTemplateConfirm={handleTemplateConfirm} />;
-      case AppStep.PHOTO_UPLOAD:
+    // Setup Flow Handlers
+    const handleFrameSelect = (frameFile: File) => {
+        const url = URL.createObjectURL(frameFile);
+        setSettings(s => ({ ...s, frameSrc: url }));
+        setAppStep(AppStep.TEMPLATE_DESIGN);
+    };
+
+    const handleTemplateConfirm = (placeholders: Placeholder[]) => {
+        setSettings(s => ({ ...s, placeholders }));
+        // Fix: Corrected typo from RUN_PHOTOBOUTH to RUN_PHOTOBOOTH.
+        setAppStep(AppStep.RUN_PHOTOBOOTH);
+        setIsSettingsOpen(true); // Prompt for hot folder right away
+    };
+
+    // Operator Panel Handlers
+    const handleStartSession = () => {
+        setSession({ isActive: true, photos: [] });
+        history.current = [{ isActive: true, photos: [] }];
+        historyIndex.current = 0;
+        setSelectedPhotoIndex(-1);
+        setFinalCompositeImage(null);
+        setAiPreviewImage(null);
+        setAiError(null);
+        setAiPrompt('');
+        sendMessage({ mode: GuestScreenMode.LIVE_PREVIEW, frameSrc: settings.frameSrc, placeholders: settings.placeholders });
+        startPolling();
+    };
+
+    const handleEndSession = () => {
+        stopPolling();
+        setSession(prev => ({ ...prev, isActive: false }));
+        sendMessage({ mode: GuestScreenMode.ATTRACT, frameSrc: settings.frameSrc });
+    };
+
+    const handleGenerateQRCode = async () => {
+        const image = await getImageForExport();
+        if(!image) {
+            alert("Could not generate final image.");
+            return;
+        }
+        sendMessage({ mode: GuestScreenMode.DELIVERY, qrCodeValue: image, frameSrc: settings.frameSrc });
+    };
+    
+    const getImageForExport = useCallback(async (): Promise<string | undefined> => {
+        if (finalCompositeImage) {
+            return finalCompositeImage;
+        }
+        const canvas = finalCanvasRef.current;
+        if (!canvas) return;
+        return canvas.toDataURL('image/png');
+    }, [finalCompositeImage]);
+
+    // History management for undo/redo
+    const updateSessionWithHistory = (newSession: PhotoboothSession) => {
+        const newHistory = history.current.slice(0, historyIndex.current + 1);
+        newHistory.push(newSession);
+        history.current = newHistory;
+        historyIndex.current = newHistory.length - 1;
+        setSession(newSession);
+        sendMessage({ mode: GuestScreenMode.REVIEW, photos: newSession.photos, frameSrc: settings.frameSrc });
+    };
+
+    const undo = () => {
+        if (historyIndex.current > 0) {
+            invalidateAiImage();
+            historyIndex.current--;
+            setSession(history.current[historyIndex.current]);
+            sendMessage({ mode: GuestScreenMode.REVIEW, photos: history.current[historyIndex.current].photos, frameSrc: settings.frameSrc });
+        }
+    };
+
+    const redo = () => {
+        if (historyIndex.current < history.current.length - 1) {
+            invalidateAiImage();
+            historyIndex.current++;
+            setSession(history.current[historyIndex.current]);
+            sendMessage({ mode: GuestScreenMode.REVIEW, photos: history.current[historyIndex.current].photos, frameSrc: settings.frameSrc });
+        }
+    };
+    
+    // Handlers for FinalizeControls
+    const onPhotoUpdate = (index: number, updates: Partial<Photo>) => {
+        invalidateAiImage();
+        const newPhotos = [...session.photos];
+        newPhotos[index] = { ...newPhotos[index], ...updates };
+        updateSessionWithHistory({ ...session, photos: newPhotos });
+    };
+    
+    const onReorderPhoto = (index: number, direction: 'forward' | 'backward') => {
+        invalidateAiImage();
+        const newPhotos = [...session.photos];
+        const photoToMove = newPhotos[index];
+        newPhotos.splice(index, 1);
+        const newIndex = direction === 'forward' ? index + 1 : index - 1;
+        newPhotos.splice(newIndex, 0, photoToMove);
+        setSelectedPhotoIndex(newIndex);
+        updateSessionWithHistory({ ...session, photos: newPhotos });
+    };
+
+    const handleOpacityChange = (opacity: number) => {
+        invalidateAiImage();
+        setFrameOpacity(opacity);
+    };
+
+    const handleGlobalScaleChange = (scale: number) => {
+        invalidateAiImage();
+        setGlobalPhotoScale(scale);
+    };
+
+    const handleAiGenerate = async () => {
+        if (!ai) {
+            setAiError("AI features are disabled. The API key is not configured by the administrator.");
+            return;
+        }
+
+        if (!aiPrompt.trim()) {
+            setAiError("Please enter a prompt to describe your edit.");
+            return;
+        }
+        setAiError(null);
+        setIsAiLoading(true);
+        setAiPreviewImage(null);
+    
+        try {
+            const imageForEdit = await getImageForExport();
+            if (!imageForEdit) {
+                throw new Error("Could not get the current image to edit.");
+            }
+    
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-image',
+                contents: {
+                    parts: [
+                        {
+                            inlineData: {
+                                data: imageForEdit.split(',')[1],
+                                mimeType: 'image/png',
+                            },
+                        },
+                        { text: aiPrompt },
+                    ],
+                },
+                config: {
+                    responseModalities: [Modality.IMAGE],
+                },
+            });
+    
+            const firstPart = response.candidates?.[0]?.content?.parts?.[0];
+            if (firstPart && firstPart.inlineData) {
+                const resultBase64 = firstPart.inlineData.data;
+                const resultUrl = `data:image/png;base64,${resultBase64}`;
+                setAiPreviewImage(resultUrl);
+            } else {
+                const safetyFeedback = response.candidates?.[0]?.safetyRatings;
+                if(safetyFeedback?.some(r => r.blocked)) {
+                     throw new Error("The AI generation was blocked due to safety settings. Please try a different prompt.");
+                }
+                throw new Error("AI did not return an image. Please try again.");
+            }
+        } catch (err) {
+            console.error("AI Generation Error:", err);
+            setAiError((err as Error).message);
+        } finally {
+            setIsAiLoading(false);
+        }
+    };
+    
+    const handleAiAccept = () => {
+        if (aiPreviewImage) {
+            setFinalCompositeImage(aiPreviewImage);
+            setAiPreviewImage(null);
+        }
+    };
+
+    const handleAiDiscard = () => {
+        setAiPreviewImage(null);
+    };
+
+
+    const renderOperatorPanel = () => {
+        const isReady = settings.frameSrc && settings.hotFolderHandle;
         return (
-          <PhotoSelector 
-            onPhotosSelect={handlePhotosSelect} 
-            placeholders={placeholders}
-            frameSrc={frameImage}
-          />
-        );
-      case AppStep.EDIT_AND_EXPORT:
-        return (
-            <div className="flex flex-col lg:flex-row items-start justify-center gap-12">
-                <CanvasEditor 
-                    frameSrc={frameImage} 
-                    photos={userPhotos} 
-                    canvasRef={canvasRef} 
-                    frameOpacity={frameOpacity}
-                    selectedPhotoIndex={selectedPhotoIndex}
-                    onSelectPhoto={setSelectedPhotoIndex}
-                    onPhotoUpdate={handlePhotoUpdate}
-                />
-                <FinalizeControls
-                    onDownload={triggerDownload} 
-                    onGetImageForExport={handleDownload}
-                    onReset={handleReset} 
-                    onCreateNew={handleCreateNew}
-                    frameOpacity={frameOpacity} 
-                    onOpacityChange={setFrameOpacity} 
-                    photos={userPhotos}
-                    selectedPhotoIndex={selectedPhotoIndex}
-                    onSelectPhoto={setSelectedPhotoIndex}
-                    onPhotoUpdate={handlePhotoUpdate}
-                    onReorderPhoto={handleReorderPhoto}
-                    onResetPhotoAdjustments={handleResetPhotoAdjustments}
-                    undo={undo}
-                    redo={redo}
-                    canUndo={canUndo}
-                    canRedo={canRedo}
-                    isKioskMode={organizerSettings.kioskMode}
-                />
+            <div className="min-h-screen p-8 flex flex-col items-center">
+                 <UiCustomizationPanel isOpen={isUiPanelOpen} onClose={() => setIsUiPanelOpen(false)} config={uiConfig} onConfigChange={setUiConfig} />
+                <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} onSettingsChange={setSettings} />
+
+                <header className="w-full max-w-7xl flex justify-between items-center mb-8">
+                     <div>
+                        <h1 className="text-4xl font-bold text-[var(--color-primary)]">{uiConfig.title}</h1>
+                        <p className="opacity-70">{uiConfig.description}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <button onClick={() => setIsUiPanelOpen(true)} className="p-2 bg-[var(--color-panel)] rounded-lg hover:bg-black/20" title="Customize UI">
+                            <PaletteIcon className="w-6 h-6" />
+                        </button>
+                        <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-[var(--color-panel)] rounded-lg hover:bg-black/20" title="Settings"><SettingsIcon /></button>
+                        {guestWindow ? (<button onClick={closeGuestWindow} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Close Guest Window</button>) : (<button onClick={openGuestWindow} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Open Guest Window</button>)}
+                    </div>
+                </header>
+
+                {!isReady && (
+                    <div className="text-center bg-[var(--color-panel)] p-8 rounded-lg">
+                        <h2 className="text-2xl font-semibold mb-4 text-yellow-400">Setup Required</h2>
+                        <p className="mb-4">Please select a Capture One hot folder to begin.</p>
+                        <button onClick={() => setIsSettingsOpen(true)} className="px-6 py-3 bg-[var(--color-primary)] text-white font-semibold rounded-lg shadow-md hover:brightness-110">Open Settings</button>
+                    </div>
+                )}
+                
+                {isReady && (
+                     <main className="w-full max-w-7xl flex-grow flex flex-col lg:flex-row gap-8">
+                        <div className="w-full lg:w-2/3 relative">
+                            <CanvasEditor 
+                                canvasRef={finalCanvasRef}
+                                frameSrc={settings.frameSrc}
+                                photos={session.photos}
+                                selectedPhotoIndex={selectedPhotoIndex}
+                                onSelectPhoto={setSelectedPhotoIndex}
+                                onPhotoUpdate={onPhotoUpdate}
+                                frameOpacity={frameOpacity}
+                                onReorderPhoto={onReorderPhoto}
+                                globalPhotoScale={globalPhotoScale}
+                            />
+                            {finalCompositeImage && (
+                                <div className="absolute inset-0 pointer-events-none">
+                                    <img src={finalCompositeImage} alt="Final Composite" className="w-full h-full object-contain" />
+                                </div>
+                            )}
+                            {aiPreviewImage && (
+                                <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-4 p-4 z-20">
+                                    <img src={aiPreviewImage} alt="AI Preview" className="max-w-full max-h-[70%] object-contain rounded-lg border-2 border-[var(--color-primary)]" />
+                                    <div className="flex gap-4">
+                                        <button onClick={handleAiAccept} className="px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">Accept</button>
+                                        <button onClick={handleAiDiscard} className="px-6 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700">Discard</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="w-full lg:w-1/3">
+                            {!session.isActive ? (
+                                <div className="bg-[var(--color-panel)] p-6 rounded-lg flex flex-col gap-4">
+                                    <h2 className="text-xl font-bold border-b border-[var(--color-border)] pb-2">New Session</h2>
+                                    <button onClick={handleStartSession} className="w-full py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 text-lg">
+                                        Start New Session
+                                    </button>
+                                     <div className="text-xs text-gray-400 space-y-2 mt-auto">
+                                        <p><strong>Frame:</strong> {settings.frameSrc ? 'Loaded' : 'None'}</p>
+                                        <p><strong>Hot Folder:</strong> {settings.hotFolderName || 'None'}</p>
+                                        <p><strong>Guest Window:</strong> {guestWindow ? 'Open' : 'Closed'}</p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-4">
+                                     <FinalizeControls
+                                        onDownload={() => {}}
+                                        onGetImageForExport={getImageForExport}
+                                        onReset={() => {}}
+                                        onCreateNew={handleEndSession}
+                                        frameOpacity={frameOpacity}
+                                        onOpacityChange={handleOpacityChange}
+                                        photos={session.photos}
+                                        selectedPhotoIndex={selectedPhotoIndex}
+                                        onSelectPhoto={setSelectedPhotoIndex}
+                                        onPhotoUpdate={onPhotoUpdate}
+                                        onResetPhotoAdjustments={() => {}}
+                                        undo={undo} redo={redo}
+                                        canUndo={historyIndex.current > 0} canRedo={historyIndex.current < history.current.length - 1}
+                                        isKioskMode={false}
+                                        globalPhotoScale={globalPhotoScale}
+                                        onGlobalPhotoScaleChange={handleGlobalScaleChange}
+                                        aiPrompt={aiPrompt}
+                                        onAiPromptChange={setAiPrompt}
+                                        onAiGenerate={handleAiGenerate}
+                                        isAiLoading={isAiLoading}
+                                        aiError={aiError}
+                                    />
+                                    <button onClick={handleGenerateQRCode} disabled={session.photos.length === 0} className="w-full py-3 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 disabled:bg-gray-600">
+                                        Show QR Code
+                                    </button>
+                                    <button onClick={handleEndSession} className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                                        End Session
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                     </main>
+                )}
             </div>
         );
-      default:
-        return <div>Error: Unknown step</div>;
     }
-  };
-
-  return (
-    <div 
-      className="min-h-screen p-4 sm:p-8 flex flex-col items-center transition-all duration-500 antialiased"
-      style={{
-        color: uiConfig.textColor,
-        backgroundColor: uiConfig.backgroundColor,
-        backgroundImage: uiConfig.backgroundSrc ? `url(${uiConfig.backgroundSrc})` : 'none',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundAttachment: 'fixed',
-      }}
-    >
-      {uiConfig.backgroundSrc && <div className="absolute inset-0 bg-black/70 backdrop-blur-sm -z-10" />}
-      <UiCustomizationPanel
-          isOpen={isUiPanelOpen}
-          onClose={() => setIsUiPanelOpen(false)}
-          config={uiConfig}
-          onConfigChange={setUiConfig}
-      />
-      
-      <header className="relative w-full text-center mb-8 z-10">
-        <div className="flex items-center justify-center gap-4">
-            {uiConfig.logoSrc && <img src={uiConfig.logoSrc} alt="Logo" className="h-12 sm:h-16 object-contain" />}
-            <div>
-              <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-[var(--color-primary)]">
-                {uiConfig.title}
-              </h1>
+    
+    const renderSetup = () => {
+        const CurrentStepComponent = {
+            [AppStep.FRAME_UPLOAD]: <FrameUploader onFrameSelect={handleFrameSelect} organizerSettings={settings} onSettingsChange={() => {}} setDirectoryHandle={() => {}} gapiAuthInstance={null} isGapiReady={false} isSignedIn={false} pickerApiLoaded={false} />,
+            [AppStep.TEMPLATE_DESIGN]: <TemplateDesigner frameSrc={settings.frameSrc} onTemplateConfirm={handleTemplateConfirm} />,
+        }[appStep];
+        
+        return (
+            <div className="min-h-screen flex flex-col items-center p-4">
+                <UiCustomizationPanel isOpen={isUiPanelOpen} onClose={() => setIsUiPanelOpen(false)} config={uiConfig} onConfigChange={setUiConfig} />
+                <header className="w-full flex justify-center items-center absolute top-8 px-8">
+                    <div className="flex-1">
+                        {/* You can add a logo or title here later */}
+                    </div>
+                    <div className="flex-1 flex justify-center">
+                        <StepIndicator currentStep={appStep} />
+                    </div>
+                    <div className="flex-1 flex justify-end">
+                        <button onClick={() => setIsUiPanelOpen(true)} className="p-2 bg-[var(--color-panel)] rounded-lg hover:bg-black/20" title="Customize UI">
+                            <PaletteIcon className="w-6 h-6" />
+                        </button>
+                    </div>
+                </header>
+                <div className="flex-grow flex items-center justify-center w-full">
+                    {CurrentStepComponent}
+                </div>
             </div>
-        </div>
-        <p className="mt-2 text-lg opacity-80">{uiConfig.description}</p>
-        <button 
-            onClick={() => setIsUiPanelOpen(true)} 
-            className="absolute top-0 right-0 p-2 opacity-70 hover:opacity-100 transition-colors"
-            title="Customize UI"
-        >
-            <PaletteIcon className="w-6 h-6" />
-        </button>
-      </header>
-      
-      <div className="w-full max-w-5xl mx-auto mb-12 mt-4 h-20 flex justify-center items-center z-10">
-         <StepIndicator currentStep={currentStep} />
-      </div>
-      
-      <main className="w-full flex-grow flex items-center justify-center z-10">
-        {renderCurrentStep()}
-      </main>
+        )
+    };
 
-      <footer className="text-center opacity-70 text-sm mt-12 z-10">
-          <p>{uiConfig.footer}</p>
-      </footer>
-    </div>
-  );
+    return (
+        <div className="min-h-screen antialiased relative bg-[var(--color-background)] text-[var(--color-text-primary)]">
+             <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage: uiConfig.backgroundSrc ? `url(${uiConfig.backgroundSrc})` : 'none', opacity: 0.1}}></div>
+             <div className="relative z-10">
+                {appStep === AppStep.RUN_PHOTOBOOTH ? renderOperatorPanel() : renderSetup()}
+             </div>
+        </div>
+    );
 };
 
 export default App;

@@ -11,11 +11,15 @@ interface CanvasEditorProps {
   selectedPhotoIndex: number;
   onSelectPhoto: (index: number) => void;
   onPhotoUpdate: (index: number, updates: Partial<Photo>) => void;
+  onReorderPhoto: (index: number, direction: 'forward' | 'backward') => void;
+  globalPhotoScale: number;
 }
 
 type InteractionMode = 'idle' | 'crop_panning' | 'rotating';
 const ROTATION_HANDLE_OFFSET = 25; // in pixels from the box edge
 const ROTATION_HANDLE_SIZE = 8; // radius in pixels
+const LAYER_BUTTON_SIZE = 24; // diameter in pixels
+const LAYER_BUTTON_MARGIN = 10; // in pixels from the corner
 
 const CanvasEditor: React.FC<CanvasEditorProps> = ({ 
     frameSrc, 
@@ -25,6 +29,8 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({
     selectedPhotoIndex,
     onSelectPhoto,
     onPhotoUpdate,
+    onReorderPhoto,
+    globalPhotoScale,
 }) => {
   const [loadedImages, setLoadedImages] = useState<Map<string, HTMLImageElement>>(new Map());
   const interaction = useRef({
@@ -95,7 +101,11 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({
         const img = loadedImages.get(photo.src);
         if (!img) return;
         
-        const { x, y, width, height } = toAbsolute(photo.transform, canvas);
+        const { x, y } = toAbsolute(photo.transform, canvas);
+        let { width, height } = toAbsolute(photo.transform, canvas);
+        width *= globalPhotoScale;
+        height *= globalPhotoScale;
+
         const angle = photo.transform.rotation * Math.PI / 180;
 
         ctx.save();
@@ -125,7 +135,11 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({
       
       if (selectedPhotoIndex !== -1 && photosToDraw[selectedPhotoIndex]) {
           const photo = photosToDraw[selectedPhotoIndex];
-          const { x, y, width, height } = toAbsolute(photo.transform, canvas);
+          const { x, y } = toAbsolute(photo.transform, canvas);
+          let { width, height } = toAbsolute(photo.transform, canvas);
+          width *= globalPhotoScale;
+          height *= globalPhotoScale;
+
           const angle = photo.transform.rotation * Math.PI / 180;
           const dpr = window.devicePixelRatio || 1;
           
@@ -151,6 +165,45 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({
           ctx.arc(0, handleY, ROTATION_HANDLE_SIZE * dpr, 0, Math.PI * 2);
           ctx.fillStyle = primaryColor;
           ctx.fill();
+
+           // Layering controls
+           const isFirst = selectedPhotoIndex === 0;
+           const isLast = selectedPhotoIndex === photos.length - 1;
+           const btnSize = LAYER_BUTTON_SIZE * dpr;
+           const btnMargin = LAYER_BUTTON_MARGIN * dpr;
+
+           const drawArrowButton = (posX: number, posY: number, direction: 'up' | 'down') => {
+               ctx.save();
+               ctx.translate(posX, posY);
+               ctx.beginPath();
+               ctx.arc(0, 0, btnSize / 2, 0, Math.PI * 2);
+               ctx.fillStyle = `rgba(${primaryRgb}, 0.9)`;
+               ctx.fill();
+
+               ctx.beginPath();
+               const arrowSize = btnSize * 0.25;
+               if (direction === 'down') {
+                   ctx.moveTo(-arrowSize, -arrowSize/2);
+                   ctx.lineTo(0, arrowSize/2);
+                   ctx.lineTo(arrowSize, -arrowSize/2);
+               } else { // up
+                   ctx.moveTo(-arrowSize, arrowSize/2);
+                   ctx.lineTo(0, -arrowSize/2);
+                   ctx.lineTo(arrowSize, arrowSize/2);
+               }
+               ctx.strokeStyle = 'white';
+               ctx.lineWidth = 1.5 * dpr;
+               ctx.stroke();
+               ctx.restore();
+           };
+           
+           if (!isFirst) {
+               drawArrowButton(-width/2 + btnMargin + btnSize/2, height/2 - btnMargin - btnSize/2, 'down');
+           }
+           if (!isLast) {
+               drawArrowButton(width/2 - btnMargin - btnSize/2, height/2 - btnMargin - btnSize/2, 'up');
+           }
+
           ctx.restore();
       }
 
@@ -159,7 +212,7 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({
         ctx.drawImage(frameImage, 0, 0, canvas.width, canvas.height);
         ctx.globalAlpha = 1.0;
       }
-  }, [loadedImages, selectedPhotoIndex, frameImage, frameOpacity]);
+  }, [loadedImages, selectedPhotoIndex, frameImage, frameOpacity, photos.length, globalPhotoScale]);
 
   useEffect(() => {
     let animationFrameId: number;
@@ -200,29 +253,45 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({
     
     for (let i = photos.length - 1; i >= 0; i--) {
         const photo = photos[i];
-        const { x, y, width, height } = toAbsolute(photo.transform, canvas);
+        const { x, y } = toAbsolute(photo.transform, canvas);
+        let { width, height } = toAbsolute(photo.transform, canvas);
+        width *= globalPhotoScale;
+        height *= globalPhotoScale;
+
         const angle = photo.transform.rotation * Math.PI / 180;
         
-        // Check rotation handle first, as it's outside the body
+        // Transform mouse to local photo coords to simplify checks
+        const localX = (mouse.x - x) * Math.cos(-angle) - (mouse.y - y) * Math.sin(-angle);
+        const localY = (mouse.x - x) * Math.sin(-angle) + (mouse.y - y) * Math.cos(-angle);
+
         if (i === selectedPhotoIndex) {
-            const handleCenterY = -height / 2 - (ROTATION_HANDLE_OFFSET * dpr);
-            const rotatedHandleX = x + handleCenterY * Math.sin(angle);
-            const rotatedHandleY = y + handleCenterY * Math.cos(-angle);
+            const btnSize = LAYER_BUTTON_SIZE * dpr;
+            const btnMargin = LAYER_BUTTON_MARGIN * dpr;
             
-            if (Math.hypot(mouse.x - rotatedHandleX, mouse.y - rotatedHandleY) < ROTATION_HANDLE_SIZE * dpr * 1.5) {
+            // Check layer buttons first (bottom corners)
+            const backwardBtnPos = { x: -width/2 + btnMargin + btnSize/2, y: height/2 - btnMargin - btnSize/2 };
+            if (i > 0 && Math.hypot(localX - backwardBtnPos.x, localY - backwardBtnPos.y) < btnSize / 2 * 1.2) {
+                 return { type: 'layer_backward' as const, index: i };
+            }
+            const forwardBtnPos = { x: width/2 - btnMargin - btnSize/2, y: height/2 - btnMargin - btnSize/2 };
+             if (i < photos.length - 1 && Math.hypot(localX - forwardBtnPos.x, localY - forwardBtnPos.y) < btnSize / 2 * 1.2) {
+                 return { type: 'layer_forward' as const, index: i };
+            }
+            
+            // Then check rotation handle
+            const handleCenterY = -height / 2 - (ROTATION_HANDLE_OFFSET * dpr);
+            if (Math.hypot(localX, localY - handleCenterY) < ROTATION_HANDLE_SIZE * dpr * 1.5) {
                 return { type: 'rotate' as const, index: i };
             }
         }
         
-        const localX = (mouse.x - x) * Math.cos(-angle) - (mouse.y - y) * Math.sin(-angle);
-        const localY = (mouse.x - x) * Math.sin(-angle) + (mouse.y - y) * Math.cos(-angle);
-
+        // Finally check photo body
         if (Math.abs(localX) < width / 2 && Math.abs(localY) < height / 2) {
             return { type: 'body' as const, index: i };
         }
     }
     return null;
-  }, [photos, selectedPhotoIndex]);
+  }, [photos, selectedPhotoIndex, globalPhotoScale]);
   
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -233,6 +302,15 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({
     interaction.current.startY = mouse.y;
     
     if (hit) {
+        if (hit.type === 'layer_backward') {
+            onReorderPhoto(hit.index, 'backward');
+            return;
+        }
+        if (hit.type === 'layer_forward') {
+            onReorderPhoto(hit.index, 'forward');
+            return;
+        }
+
         onSelectPhoto(hit.index);
         const photo = photos[hit.index];
         const photoCenter = toAbsolute(photo.transform, canvasRef.current!);
@@ -259,7 +337,10 @@ const CanvasEditor: React.FC<CanvasEditorProps> = ({
     if (interaction.current.mode === 'idle') {
         const hit = getHit(mouse);
         if (hit) {
-            setCursor(hit.type === 'rotate' ? 'crosshair' : 'move');
+            if (hit.type === 'rotate') setCursor('crosshair');
+            else if (hit.type === 'body') setCursor('move');
+            else if (hit.type.startsWith('layer')) setCursor('pointer');
+            else setCursor('default');
         } else {
             setCursor('default');
         }

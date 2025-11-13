@@ -1,7 +1,7 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import GuestWindow from './components/GuestWindow';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -9,8 +9,22 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+
+const renderApp = () => {
+  if (window.location.hash === '#guest') {
+    root.render(
+      <React.StrictMode>
+        <GuestWindow />
+      </React.StrictMode>
+    );
+  } else {
+    root.render(
+      <React.StrictMode>
+        <App />
+      </React.StrictMode>
+    );
+  }
+};
+
+window.addEventListener('hashchange', renderApp);
+renderApp(); // Initial render

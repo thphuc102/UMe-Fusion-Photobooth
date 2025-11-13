@@ -1,12 +1,28 @@
 // Fix: Import `useEffect` from `react`.
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { UploadIcon, ZoomInIcon, ZoomOutIcon, ResetIcon, SettingsIcon } from './icons';
+import { UploadIcon, ZoomInIcon, ZoomOutIcon, ResetIcon, SettingsIcon, GoogleDriveIcon } from './icons';
 import { OrganizerSettings } from '../types';
+
+declare const google: any;
+
+// Add type definition for window.showDirectoryPicker to fix TypeScript error.
+declare global {
+  interface Window {
+    showDirectoryPicker(options?: {
+      mode?: 'read' | 'readwrite';
+    }): Promise<FileSystemDirectoryHandle>;
+  }
+}
 
 interface FrameUploaderProps {
   onFrameSelect: (frameFile: File) => void;
   organizerSettings: OrganizerSettings;
   onSettingsChange: (settings: OrganizerSettings) => void;
+  setDirectoryHandle: React.Dispatch<React.SetStateAction<FileSystemDirectoryHandle | null>>;
+  gapiAuthInstance: any;
+  isGapiReady: boolean;
+  isSignedIn: boolean;
+  pickerApiLoaded: boolean;
 }
 
 const SetupModal: React.FC<{
@@ -14,7 +30,12 @@ const SetupModal: React.FC<{
     onClose: () => void;
     settings: OrganizerSettings;
     onSave: (settings: OrganizerSettings) => void;
-}> = ({ isOpen, onClose, settings, onSave }) => {
+    setDirectoryHandle: React.Dispatch<React.SetStateAction<FileSystemDirectoryHandle | null>>;
+    gapiAuthInstance: any;
+    isGapiReady: boolean;
+    isSignedIn: boolean;
+    pickerApiLoaded: boolean;
+}> = ({ isOpen, onClose, settings, onSave, setDirectoryHandle, gapiAuthInstance, isGapiReady, isSignedIn, pickerApiLoaded }) => {
     const [localSettings, setLocalSettings] = useState<OrganizerSettings>(settings);
 
     useEffect(() => {
@@ -31,6 +52,50 @@ const SetupModal: React.FC<{
     const handleSettingChange = (field: keyof OrganizerSettings, value: any) => {
         setLocalSettings(prev => ({ ...prev, [field]: value }));
     };
+    
+    const handleSignIn = () => gapiAuthInstance?.signIn();
+    const handleSignOut = () => gapiAuthInstance?.signOut();
+
+    const handleSelectDriveFolder = () => {
+        const accessToken = gapiAuthInstance.currentUser.get().getAuthResponse().access_token;
+        if (pickerApiLoaded && accessToken) {
+            const view = new google.picker.View(google.picker.ViewId.FOLDERS);
+            view.setMimeTypes("application/vnd.google-apps.folder");
+            const picker = new google.picker.PickerBuilder()
+                .enableFeature(google.picker.Feature.NAV_HIDDEN)
+                .setAppId(gapiAuthInstance.clientId)
+                .setOAuthToken(accessToken)
+                .addView(view)
+                .setCallback((data: any) => {
+                    if (data.action === google.picker.Action.PICKED) {
+                        const doc = data.docs[0];
+                        setLocalSettings(prev => ({...prev, driveFolderId: doc.id, driveFolderName: doc.name }));
+                    }
+                })
+                .build();
+            picker.setVisible(true);
+        }
+    };
+
+
+    const handleSelectFolder = async () => {
+        try {
+            if (!('showDirectoryPicker' in window)) {
+                alert('Your browser does not support local folder access. Please use a modern browser like Chrome or Edge.');
+                return;
+            }
+            const handle = await window.showDirectoryPicker({
+                mode: 'readwrite',
+            });
+            setDirectoryHandle(handle);
+            handleSettingChange('localDownloadPath', handle.name);
+        } catch (err) {
+            if ((err as Error).name !== 'AbortError') {
+              console.error('Error selecting directory:', err);
+            }
+        }
+    };
+
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" aria-modal="true">
@@ -39,16 +104,43 @@ const SetupModal: React.FC<{
                 <p className="text-sm text-[var(--color-text-primary)] opacity-70">Configure these settings before the event. They will persist for the session.</p>
                 
                 <div>
-                    <label htmlFor="driveUrl" className="block text-sm font-medium text-[var(--color-text-primary)] opacity-80">Google Drive Folder URL (Simulated)</label>
-                    <input type="text" id="driveUrl" value={localSettings.driveFolderUrl} onChange={(e) => handleSettingChange('driveFolderUrl', e.target.value)} className="mt-1 block w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-md p-2 text-sm text-[var(--color-text-primary)] focus:ring-[var(--color-primary)] focus:border-[var(--color-primary)]" placeholder="https://drive.google.com/drive/folders/..." />
+                  <label className="block text-sm font-medium text-[var(--color-text-primary)] opacity-80">Google Drive Integration</label>
+                  <div className="mt-1 p-3 bg-[var(--color-background)] border border-[var(--color-border)] rounded-md space-y-2">
+                    {!isGapiReady ? (
+                      <p className="text-xs text-center text-gray-400">Loading Google Services...</p>
+                    ) : !isSignedIn ? (
+                      <button onClick={handleSignIn} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700">
+                        <GoogleDriveIcon className="w-5 h-5" /> Connect to Google Drive
+                      </button>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                            <p className="text-xs text-gray-300">Connected as: <span className="font-bold">{gapiAuthInstance?.currentUser.get().getBasicProfile().getEmail()}</span></p>
+                            <button onClick={handleSignOut} className="text-xs text-red-400 hover:underline">Disconnect</button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input type="text" readOnly value={localSettings.driveFolderName || "No folder selected"} className="block w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-md p-2 text-sm text-[var(--color-text-primary)] opacity-70" />
+                            <button onClick={handleSelectDriveFolder} className="px-4 py-2 text-sm font-medium text-white bg-[var(--color-primary)] rounded-md filter hover:brightness-110 flex-shrink-0">Select Folder...</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div>
-                    <label htmlFor="downloadPath" className="block text-sm font-medium text-[var(--color-text-primary)] opacity-80">Local Download Path (Simulated)</label>
-                    <input type="text" id="downloadPath" value={localSettings.localDownloadPath} onChange={(e) => handleSettingChange('localDownloadPath', e.target.value)} className="mt-1 block w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-md p-2 text-sm text-[var(--color-text-primary)] focus:ring-[var(--color-primary)] focus:border-[var(--color-primary)]" placeholder="C:\Users\YourUser\Downloads\EventPhotos" />
-                    <p className="text-xs text-gray-500 mt-1">Note: Web apps cannot control download location. Browser will use its default settings.</p>
+                    <label className="block text-sm font-medium text-[var(--color-text-primary)] opacity-80">Local Download Folder (for Auto-Saving)</label>
+                    <div className="flex items-center gap-2 mt-1">
+                      <input type="text" readOnly value={localSettings.localDownloadPath || "No folder selected"} className="block w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-md p-2 text-sm text-[var(--color-text-primary)] opacity-70" />
+                      <button onClick={handleSelectFolder} className="px-4 py-2 text-sm font-medium text-white bg-[var(--color-primary)] rounded-md filter hover:brightness-110 flex-shrink-0">Select...</button>
+                    </div>
                 </div>
                 
+                 <div>
+                    <label htmlFor="fileNameTemplate" className="block text-sm font-medium text-[var(--color-text-primary)] opacity-80">File Name Template</label>
+                    <input type="text" id="fileNameTemplate" value={localSettings.fileNameTemplate} onChange={(e) => handleSettingChange('fileNameTemplate', e.target.value)} className="mt-1 block w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-md p-2 text-sm text-[var(--color-text-primary)] focus:ring-[var(--color-primary)] focus:border-[var(--color-primary)]" />
+                    <p className="text-xs text-gray-500 mt-1">Use placeholders: <code className="bg-black/20 px-1 rounded">{`{date}`}</code> <code className="bg-black/20 px-1 rounded">{`{time}`}</code> <code className="bg-black/20 px-1 rounded">{`{timestamp}`}</code></p>
+                </div>
+
                 <div>
                     <label htmlFor="autoReset" className="block text-sm font-medium text-[var(--color-text-primary)] opacity-80">Auto-Reset Timer (Seconds)</label>
                     <input type="number" id="autoReset" min="0" value={localSettings.autoResetTimer} onChange={(e) => handleSettingChange('autoResetTimer', parseInt(e.target.value, 10) || 0)} className="mt-1 block w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-md p-2 text-sm text-[var(--color-text-primary)] focus:ring-[var(--color-primary)] focus:border-[var(--color-primary)]" />
@@ -71,7 +163,7 @@ const SetupModal: React.FC<{
 }
 
 
-const FrameUploader: React.FC<FrameUploaderProps> = ({ onFrameSelect, organizerSettings, onSettingsChange }) => {
+const FrameUploader: React.FC<FrameUploaderProps> = ({ onFrameSelect, organizerSettings, onSettingsChange, setDirectoryHandle, ...gapiProps }) => {
   const [framePreview, setFramePreview] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +235,7 @@ const FrameUploader: React.FC<FrameUploaderProps> = ({ onFrameSelect, organizerS
 
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-6 p-8 bg-[var(--color-panel)] rounded-2xl shadow-lg relative">
-        <SetupModal isOpen={isSetupModalOpen} onClose={() => setSetupModalOpen(false)} settings={organizerSettings} onSave={onSettingsChange} />
+        <SetupModal isOpen={isSetupModalOpen} onClose={() => setSetupModalOpen(false)} settings={organizerSettings} onSave={onSettingsChange} setDirectoryHandle={setDirectoryHandle} {...gapiProps} />
         <button onClick={() => setSetupModalOpen(true)} className="absolute top-4 right-4 text-[var(--color-text-primary)] opacity-70 hover:opacity-100 transition-colors" title="Organizer Settings">
             <SettingsIcon className="w-6 h-6" />
         </button>
