@@ -1,7 +1,8 @@
 
 
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { CameraIcon, UploadIcon, RedoIcon, UndoIcon } from './icons';
+import { CameraIcon, UploadIcon, RedoIcon, UndoIcon, FolderIcon } from './icons';
 import { Placeholder } from '../types';
 
 // A custom hook to manage state with undo/redo functionality
@@ -50,11 +51,12 @@ export const useHistoryState = <T,>(initialState: T) => {
 
 interface PhotoSelectorProps {
   onPhotosSelect: (photoDataUrls: string[]) => void;
+  onUseHotFolder: () => void;
   placeholders: Placeholder[];
   frameSrc: string | null;
 }
 
-const PhotoSelector: React.FC<PhotoSelectorProps> = ({ onPhotosSelect, placeholders, frameSrc }) => {
+const PhotoSelector: React.FC<PhotoSelectorProps> = ({ onPhotosSelect, onUseHotFolder, placeholders, frameSrc }) => {
   const maxPhotos = placeholders.length;
   const { state: photos, setState: setPhotos, undo, redo, canUndo, canRedo, reset } = useHistoryState<(string | null)[]>([]);
   const [importedPhotos, setImportedPhotos] = useState<string[]>([]);
@@ -436,19 +438,25 @@ const PhotoSelector: React.FC<PhotoSelectorProps> = ({ onPhotosSelect, placehold
         <div ref={leftColumnRef} className="w-full lg:w-72 flex-shrink-0 flex flex-col gap-4">
             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" multiple className="hidden" />
             
-             <div className="flex flex-wrap justify-center items-center gap-4 flex-shrink-0">
-                {!stream && <button onClick={startCamera} className="px-4 py-2 bg-[var(--color-primary)] text-white font-semibold rounded-lg shadow-md filter hover:brightness-110">Start Camera</button>}
-                {stream && (
-                    <div className="w-40 h-30 bg-black rounded-lg overflow-hidden relative group">
-                        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
-                        <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={handleCapture} className="p-2 bg-green-600 rounded-full text-white mb-2"><CameraIcon /></button>
-                            <button onClick={stopCamera} className="text-xs px-2 py-1 bg-red-600 text-white rounded">Stop</button>
+             <div className="flex flex-col items-stretch justify-center gap-4 flex-shrink-0">
+                <div className="flex flex-wrap items-center justify-center gap-4">
+                    {!stream && <button onClick={startCamera} className="px-4 py-2 bg-[var(--color-primary)] text-white font-semibold rounded-lg shadow-md filter hover:brightness-110">Start Camera</button>}
+                    {stream && (
+                        <div className="w-40 h-30 bg-black rounded-lg overflow-hidden relative group">
+                            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
+                            <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={handleCapture} className="p-2 bg-green-600 rounded-full text-white mb-2"><CameraIcon /></button>
+                                <button onClick={stopCamera} className="text-xs px-2 py-1 bg-red-600 text-white rounded">Stop</button>
+                            </div>
                         </div>
-                    </div>
-                )}
-                <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">
-                    <UploadIcon className="w-6 h-6" /> Import
+                    )}
+                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">
+                        <UploadIcon className="w-6 h-6" /> Import
+                    </button>
+                </div>
+                <div className="text-center text-xs opacity-50">or</div>
+                <button onClick={onUseHotFolder} className="flex items-center justify-center gap-2 px-6 py-3 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700">
+                    <FolderIcon className="w-6 h-6" /> Use Hot Folder (Tethered)
                 </button>
             </div>
             

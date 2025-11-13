@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { AppStep } from '../types';
 
@@ -10,7 +11,8 @@ const steps = [
   { id: AppStep.FRAME_UPLOAD, name: 'Upload Frame' },
   { id: AppStep.TEMPLATE_DESIGN, name: 'Design Layout' },
   { id: AppStep.PHOTO_UPLOAD, name: 'Add Photos' },
-  { id: AppStep.EDIT_AND_EXPORT, name: 'Finalize & Export' },
+  // Fix: Corrected enum member to match its definition in `types.ts`.
+  { id: AppStep.FINALIZE_AND_EXPORT, name: 'Finalize & Export' },
 ];
 
 const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep }) => {

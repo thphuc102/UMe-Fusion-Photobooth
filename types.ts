@@ -11,9 +11,8 @@ export type OrganizerSettings = {
 export enum AppStep {
   FRAME_UPLOAD = 1,
   TEMPLATE_DESIGN = 2,
-  PHOTO_UPLOAD = 3, // Kept for consistency but will be the run step
-  EDIT_AND_EXPORT = 4,
-  RUN_PHOTOBOOTH = 3, // Alias for photo upload
+  PHOTO_UPLOAD = 3,
+  FINALIZE_AND_EXPORT = 4,
 }
 
 export enum GuestScreenMode {

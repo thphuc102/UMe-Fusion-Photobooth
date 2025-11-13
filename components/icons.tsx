@@ -56,6 +56,13 @@ export const MoveIcon: React.FC<{ className?: string }> = ({ className = "w-6 h-
     </svg>
 );
 
+export const FolderIcon: React.FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.75h16.5m-16.5 0A2.25 2.25 0 0 1 5.25 7.5h5.25c.621 0 1.17-.256 1.563-.687a2.25 2.25 0 0 1 1.563-.687h5.25A2.25 2.25 0 0 1 21 8.25v9.75A2.25 2.25 0 0 1 18.75 21H5.25A2.25 2.25 0 0 1 3 18.75V9.75Z" />
+    </svg>
+);
+
+
 export const GoogleDriveIcon: React.FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 512 512" fill="currentColor">
         <path d="M339 396 L172 396 L255.5 264.5 L422.5 264.5 L339 396 Z M208.5 116 L292 247.5 L375.5 116 L208.5 116 Z M116 247.5 L199.5 116 L89.5 116 C81.8 116 75.5 122.3 75.5 130 L75.5 233.5 C75.5 241.2 81.8 247.5 89.5 247.5 L116 247.5 Z M436.5 247.5 L422.5 247.5 L339 379 L422.5 379 C430.2 379 436.5 372.7 436.5 365 L436.5 261.5 C436.5 253.8 430.2 247.5 422.5 247.5 L436.5 247.5 Z"/>
