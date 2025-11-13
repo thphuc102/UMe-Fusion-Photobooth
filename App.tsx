@@ -277,7 +277,7 @@ const App: React.FC = () => {
         historyIndex.current = 0;
         startPolling();
         setAppStep(AppStep.FINALIZE_AND_EXPORT);
-        sendMessage({ mode: GuestScreenMode.LIVE_PREVIEW, frameSrc: settings.frameSrc, placeholders: settings.placeholders });
+        sendMessage({ mode: GuestScreenMode.TETHER_PREVIEW, frameSrc: settings.frameSrc, placeholders: settings.placeholders });
     };
 
     const handleCreateNew = () => {

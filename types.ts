@@ -17,6 +17,7 @@ export enum AppStep {
 
 export enum GuestScreenMode {
   ATTRACT = 'ATTRACT',
+  TETHER_PREVIEW = 'TETHER_PREVIEW',
   LIVE_PREVIEW = 'LIVE_PREVIEW',
   COUNTDOWN = 'COUNTDOWN',
   REVIEW = 'REVIEW',

@@ -13,6 +13,46 @@ const AttractMode: React.FC<{ frameSrc: string | null }> = ({ frameSrc }) => (
     </div>
 );
 
+const TetherPreviewMode: React.FC<{ frameSrc: string | null; placeholders: Placeholder[] }> = ({ frameSrc, placeholders }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        // Use a standard high-resolution canvas size and let CSS scale it.
+        // This maintains a consistent aspect ratio for drawing placeholders.
+        canvas.width = 1920;
+        canvas.height = 1080;
+
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (placeholders && placeholders.length > 0) {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.lineWidth = 4;
+                ctx.setLineDash([15, 10]);
+                placeholders.forEach(p => {
+                    ctx.strokeRect(p.x * canvas.width, p.y * canvas.height, p.width * canvas.width, p.height * canvas.height);
+                });
+            }
+        }
+    }, [placeholders]);
+
+    return (
+        <div className="relative w-full h-full bg-black flex items-center justify-center text-center text-white">
+            <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full object-contain"></canvas>
+            {frameSrc && <img src={frameSrc} alt="Overlay" className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />}
+            <div className="relative z-10 p-8 bg-black/50 rounded-2xl">
+                <h1 className="text-8xl font-bold">Look at the Camera!</h1>
+                <p className="text-4xl mt-4 animate-pulse">Strike a Pose!</p>
+            </div>
+        </div>
+    );
+};
+
+
 const LivePreviewMode: React.FC<{ frameSrc: string | null; placeholders: Placeholder[] }> = ({ frameSrc, placeholders }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -233,6 +273,8 @@ const GuestWindow: React.FC = () => {
 
     const renderContent = () => {
         switch (state.mode) {
+            case GuestScreenMode.TETHER_PREVIEW:
+                return <TetherPreviewMode frameSrc={state.frameSrc || null} placeholders={state.placeholders || []}/>;
             case GuestScreenMode.LIVE_PREVIEW:
                 return <LivePreviewMode frameSrc={state.frameSrc || null} placeholders={state.placeholders || []}/>;
             case GuestScreenMode.COUNTDOWN:
