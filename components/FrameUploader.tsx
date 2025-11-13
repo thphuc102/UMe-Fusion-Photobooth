@@ -138,7 +138,7 @@ const SetupModal: React.FC<{
                  <div>
                     <label htmlFor="fileNameTemplate" className="block text-sm font-medium text-[var(--color-text-primary)] opacity-80">File Name Template</label>
                     <input type="text" id="fileNameTemplate" value={localSettings.fileNameTemplate} onChange={(e) => handleSettingChange('fileNameTemplate', e.target.value)} className="mt-1 block w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-md p-2 text-sm text-[var(--color-text-primary)] focus:ring-[var(--color-primary)] focus:border-[var(--color-primary)]" />
-                    <p className="text-xs text-gray-500 mt-1">Use placeholders: <code className="bg-black/20 px-1 rounded">{`{date}`}</code> <code className="bg-black/20 px-1 rounded">{`{time}`}</code> <code className="bg-black/20 px-1 rounded">{`{timestamp}`}</code></p>
+                    <p className="text-xs text-gray-500 mt-1">Use placeholders: <code className="bg-black/20 px-1 rounded">{`{date}`}</code> <code className="bg-black/20 px-1 rounded">{`{time}`}</code> <code className="bg-black/20 px-1 rounded">{`{timestamp}`}</code> <code className="bg-black/20 px-1 rounded">{`{number}`}</code></p>
                 </div>
 
                 <div>

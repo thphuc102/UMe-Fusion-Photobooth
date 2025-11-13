@@ -39,7 +39,7 @@ Before starting, you can customize the photobooth's appearance and behavior.
 2.  **Organizer Settings (Gear Icon ⚙️)**: On the very first screen ("Upload Your Frame"), click the gear icon.
     - **Google Drive**: Connect a Google account to save photos directly to a selected Drive folder (feature for future enhancements).
     - **Local Download Folder**: Set a folder on your computer for auto-saving images.
-    - **File Name Template**: Define how final images are named using placeholders like `{timestamp}`.
+    - **File Name Template**: Define how final images are named using placeholders like `{timestamp}` and `{number}` (a sequential counter).
     - **Auto-Reset Timer**: Set a countdown (in seconds) to automatically reset the booth after a session is complete. Set to `0` to disable.
     - **Kiosk Mode**: Enable this to hide the "Start New Session" button on the final screen, preventing guests from changing the frame.
 

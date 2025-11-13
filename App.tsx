@@ -56,7 +56,7 @@ const App: React.FC = () => {
         hotFolderName: '',
         driveFolderId: null,
         driveFolderName: '',
-        fileNameTemplate: 'photobooth-{timestamp}',
+        fileNameTemplate: 'photobooth-{timestamp}-{number}',
     });
     const [session, setSession] = useState<PhotoboothSession>({
         isActive: false,
@@ -71,6 +71,7 @@ const App: React.FC = () => {
     const [globalPhotoScale, setGlobalPhotoScale] = useState(1);
     const history = useRef<PhotoboothSession[]>([]);
     const historyIndex = useRef(0);
+    const fileCounter = useRef(1);
     
     // AI Editing State
     const [aiPrompt, setAiPrompt] = useState('');
@@ -327,6 +328,43 @@ const App: React.FC = () => {
         return canvas.toDataURL('image/png');
     }, [finalCompositeImage]);
 
+    const generateFilename = useCallback(() => {
+        const now = new Date();
+        const date = now.toISOString().split('T')[0];
+        const time = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+        const timestamp = now.getTime();
+        
+        // Pad with 4 zeros, e.g., 0001, 0002
+        const number = String(fileCounter.current).padStart(4, '0');
+
+        const filename = settings.fileNameTemplate
+            .replace('{date}', date)
+            .replace('{time}', time)
+            .replace('{timestamp}', String(timestamp))
+            .replace('{number}', number);
+
+        return `${filename}.png`;
+    }, [settings.fileNameTemplate]);
+
+    const handleDownload = useCallback(async () => {
+        const image = await getImageForExport();
+        if (!image) {
+            alert("Could not generate final image for download.");
+            return;
+        }
+
+        const filename = generateFilename();
+        
+        const link = document.createElement('a');
+        link.href = image;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        fileCounter.current += 1;
+    }, [getImageForExport, generateFilename]);
+
     // History management for undo/redo
     const updateSessionWithHistory = (newSession: PhotoboothSession) => {
         const newHistory = history.current.slice(0, historyIndex.current + 1);
@@ -505,7 +543,7 @@ const App: React.FC = () => {
                     <div className="w-full lg:w-1/3">
                         <div className="flex flex-col gap-4">
                                 <FinalizeControls
-                                    onDownload={() => {}}
+                                    onDownload={handleDownload}
                                     onGetImageForExport={getImageForExport}
                                     onReset={handleResetApp}
                                     onCreateNew={handleCreateNew}

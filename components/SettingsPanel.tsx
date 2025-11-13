@@ -101,7 +101,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose, settings
                  <div>
                     <label htmlFor="fileNameTemplate" className="block text-sm font-medium text-gray-300">File Name Template</label>
                     <input type="text" id="fileNameTemplate" value={localSettings.fileNameTemplate} onChange={(e) => handleSettingChange('fileNameTemplate', e.target.value)} className="mt-1 block w-full bg-gray-900 border border-gray-700 rounded-md p-2 text-sm text-gray-200" />
-                    <p className="text-xs text-gray-500 mt-1">Placeholders: <code className="bg-black/20 px-1 rounded">{`{timestamp}`}</code></p>
+                    <p className="text-xs text-gray-500 mt-1">Placeholders: <code className="bg-black/20 px-1 rounded">{`{date}`}</code> <code className="bg-black/20 px-1 rounded">{`{time}`}</code> <code className="bg-black/20 px-1 rounded">{`{timestamp}`}</code> <code className="bg-black/20 px-1 rounded">{`{number}`}</code></p>
                 </div>
 
                 {/* Buttons */}
